@@ -23,7 +23,7 @@ declare global {
 let container: HTMLDivElement;
 let root: Root;
 let requests: { url: string; method: string; body?: string }[] = [];
-/** Possible keys the export stops on until each is acknowledged (SEC review C2). */
+/** Possible keys the publish stops on until each is acknowledged (SEC review C2). */
 let possibleKeys: { path: string; line: number; label: string; fingerprint: string }[] = [];
 /** What `GET .../submission` answers with next. */
 let submissionReceipt: HubReceipt | null = null;
@@ -67,16 +67,14 @@ beforeEach(() => {
     vi.fn(async (url: string, init?: RequestInit) => {
       const method = init?.method ?? "GET";
       requests.push({ url, method, body: init?.body as string | undefined });
-      if (url.includes("/bundle")) {
-        const acknowledged = new URL(url, "http://x").searchParams.getAll("acknowledge");
+      if (url.includes("/bundle")) return new Response(bundleText);
+      if (url.endsWith("/submission")) return json({ receipt: submissionReceipt });
+      if (url.endsWith("/publish")) {
+        const acknowledged: string[] = JSON.parse((init?.body as string) || "{}").acknowledge ?? [];
         const pending = possibleKeys.filter((k) => !acknowledged.includes(k.fingerprint));
         if (pending.length) {
           return json({ detail: "may be a private key", possible_keys: pending }, 409);
         }
-        return new Response(bundleText);
-      }
-      if (url.endsWith("/submission")) return json({ receipt: submissionReceipt });
-      if (url.endsWith("/publish")) {
         submissionReceipt = publishReceipt;
         return json({ published: publishReceipt.status === "published", receipt: publishReceipt });
       }
@@ -215,29 +213,27 @@ it("recovers from a transient status failure without re-uploading", async () => 
   expect(requests.every((r) => !r.url.endsWith("/publish"))).toBe(true);
 });
 
-it("stops on a possible key and publishes only once the person rules it out", async () => {
+it("stops a publish on a possible key and sends it only once the person rules it out", async () => {
   possibleKeys = [
     { path: "routines/r.py", line: 11, label: "evm-hex64", fingerprint: "sha256:08064dddc912e6a3" },
   ];
   await render();
   await click("Publish");
+  await click("Publish"); // the preview's own confirm button
 
   const check = container.querySelector("[data-possible-keys]");
   expect(check?.textContent).toContain("routines/r.py:11");
-  expect(container.querySelector("[data-publish-preview]")).toBeNull();
-  // Continue stays off until every value is ticked as not a key.
-  expect(button("Continue").disabled).toBe(true);
+  expect(container.querySelector("[data-publish-status]")).toBeNull();
+  const confirm = [...check!.querySelectorAll("button")].find((b) => b.textContent === "Publish")!;
+  // Stays off until every value is ticked as not a key.
+  expect(confirm.disabled).toBe(true);
 
   const box = check!.querySelector("input[type=checkbox]") as HTMLInputElement;
   await act(async () => box.click());
-  expect(button("Continue").disabled).toBe(false);
-  await click("Continue");
+  expect(confirm.disabled).toBe(false);
+  await act(async () => confirm.click());
 
-  const preview = container.querySelector("[data-publish-preview]");
-  expect(preview?.textContent).toContain("1 value you confirmed are not keys");
-  expect(requests.at(-1)?.url).toContain("acknowledge=sha256%3A08064dddc912e6a3");
-
-  await click("Publish"); // the preview's own confirm button
-  const publish = requests.find((r) => r.url.endsWith("/publish"));
-  expect(JSON.parse(publish!.body!).acknowledge).toEqual(["sha256:08064dddc912e6a3"]);
+  const publishes = requests.filter((r) => r.url.endsWith("/publish"));
+  expect(JSON.parse(publishes.at(-1)!.body!).acknowledge).toEqual(["sha256:08064dddc912e6a3"]);
+  await waitFor(() => container.querySelector("[data-publish-status='pending']") !== null);
 });

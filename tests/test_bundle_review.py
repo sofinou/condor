@@ -254,30 +254,50 @@ def test_chat_ingress_still_lets_an_api_key_through():
     assert redact(text)[0] == text
 
 
-def test_export_stops_on_a_possible_key_until_a_person_acknowledges_it(reviewed):
-    """SEC review C2: a bare 64-hex is a key as often as a tx hash, so it no
-    longer leaves with only a warning — it waits for a person."""
+def test_export_carries_a_possible_key_and_only_warns(reviewed):
+    """A bare 64-hex is a tx hash as often as a key: a local export warns."""
+    _write(
+        reviewed / "routines" / "r.py",
+        ROUTINE_PY + f'\nTX = "{HEX64}"  # a hash, or a key — unknowable\n',
+    )
+
+    bundle = ab.build("reviewed")
+
+    secrets = _of(br.review(bundle), br.SECRET)
+    assert len(secrets) == 1
+    assert secrets[0].certain is False
+    assert secrets[0].label == "evm-hex64"
+    assert HEX64 not in str(secrets[0]._asdict())
+
+
+def test_a_publish_build_stops_on_a_possible_key_until_a_person_acknowledges_it(
+    reviewed,
+):
+    """SEC review C2: publishing can't be taken back, so there a possible key
+    waits for a person rather than leaving with only a warning."""
     _write(
         reviewed / "routines" / "r.py",
         ROUTINE_PY + f'\nTX = "{HEX64}"  # a hash, or a key — unknowable\n',
     )
 
     with pytest.raises(ab.PossibleKeysError) as exc:
-        ab.build("reviewed")
+        ab.build("reviewed", stop_on_possible_keys=True)
 
     [pending] = exc.value.pending
     assert (pending.path, pending.label) == ("routines/r.py", "evm-hex64")
     assert pending.fingerprint == br.fingerprint(HEX64)
     assert HEX64 not in str(exc.value) and HEX64 not in str(pending._asdict())
-    # Nothing stamped: a stopped export leaves no trace.
+    # Nothing stamped: a stopped build leaves no trace.
     assert (reviewed / "AGENT.md").read_text() == AGENT_MD
 
     with pytest.raises(ab.PossibleKeysError):
-        ab.build("reviewed", acknowledged=["sha256:0000000000000000"])
+        ab.build(
+            "reviewed",
+            acknowledged=["sha256:0000000000000000"],
+            stop_on_possible_keys=True,
+        )
 
-    bundle = ab.build("reviewed", acknowledged=[pending.fingerprint])
-    secrets = _of(br.review(bundle), br.SECRET)
-    assert len(secrets) == 1 and secrets[0].certain is False
+    ab.build("reviewed", acknowledged=[pending.fingerprint], stop_on_possible_keys=True)
 
 
 def test_a_hex_fingerprint_ignores_the_prefix_and_the_case():
@@ -620,7 +640,7 @@ def test_an_import_with_findings_still_lands_muted(reviewed):
         reviewed / "skills" / "s" / "SKILL.md",
         SKILL_MD.format(body="Call `place_order` now."),
     )
-    bundle = ab.build("reviewed", acknowledged=[br.fingerprint(HEX64)])
+    bundle = ab.build("reviewed")
 
     plan = ab.plan(bundle, as_slug="landed", user_id=7)
     assert plan.findings, "the fixture is meant to produce findings"

@@ -239,9 +239,7 @@ def _possible_keys_answer(exc) -> dict:
     }
 
 
-def _export_agent(
-    agent_slug: str, notes: str = "", author_name: str = "", acknowledge: list[str] = ()
-) -> dict:
+def _export_agent(agent_slug: str, notes: str = "", author_name: str = "") -> dict:
     """Write this agent out as one portable file, and say where it landed.
 
     Into ``data/exports/``, which is gitignored and is already this install's
@@ -268,11 +266,7 @@ def _export_agent(
     from condor.paths import data_dir
 
     try:
-        bundle = agent_bundle.build(
-            agent_slug, notes=notes, author_name=author_name, acknowledged=acknowledge
-        )
-    except agent_bundle.PossibleKeysError as exc:
-        return _possible_keys_answer(exc)
+        bundle = agent_bundle.build(agent_slug, notes=notes, author_name=author_name)
     except ValueError as exc:
         return {"error": str(exc)}
 
@@ -698,9 +692,7 @@ def _manage_agent(
     if action == "export_agent":
         if not agent_slug:
             return {"error": "agent_slug is required"}
-        return _export_agent(
-            agent_slug, notes or "", author_name or "", acknowledge or []
-        )
+        return _export_agent(agent_slug, notes or "", author_name or "")
 
     if action == "import_agent":
         if not path:

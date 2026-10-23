@@ -369,12 +369,11 @@ def certain_secrets(findings: Sequence[Finding]) -> list[Finding]:
 #
 # A bare 64-hex is an EVM private key *or* a tx hash; an 87–88-char base58 is a
 # Solana secret *or* a transaction signature (``secrets.py``'s table). Neither
-# can be refused outright, so neither may leave the box unseen either: export
-# and publish stop on each one until the caller acknowledges it by its
-# fingerprint — a short hash of the value, so a person can confirm "that one is
-# a tx hash" without the value itself ever riding in a request, a log or an
-# error. Botcamp computes the same fingerprint (``src/lib/agent-secrets.ts``),
-# which is how an acknowledgement made here is honoured on the hub.
+# can be refused outright, but neither may leave the box on a publish unseen
+# either: the publish stops on each one until a person acknowledges it by its
+# fingerprint — a short hash of the value, so they can confirm "that one is a
+# tx hash" without the value itself riding in a request, a log or an error.
+# Botcamp flags the same shapes for its own review.
 
 
 class PossibleKey(NamedTuple):

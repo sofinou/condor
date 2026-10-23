@@ -591,6 +591,7 @@ def build(
     notes: str = "",
     author_name: str = "",
     acknowledged: Sequence[str] = (),
+    stop_on_possible_keys: bool = False,
 ) -> Bundle:
     """The bundle for ``slug``, read from disk and scrubbed.
 
@@ -608,8 +609,9 @@ def build(
     leaves no trace.
 
     ``notes`` and ``author_name`` are the exporting caller's; neither is read
-    by anything that decides what gets written. ``acknowledged`` is the
-    fingerprints of possible keys a person confirmed are not keys.
+    by anything that decides what gets written. With ``stop_on_possible_keys``
+    (a publish, never a local export) a value that may be a key raises
+    :class:`PossibleKeysError` unless its fingerprint is in ``acknowledged``.
 
     Raises :class:`BundleError` for an agent that does not exist, a file whose
     bytes are not UTF-8 (named, so the operator can remove it), a bundle over
@@ -692,13 +694,14 @@ def build(
     if refusal:
         raise BundleError(refusal)
     # A value that *may* be a key (64 hex, long base58) is a tx hash as often
-    # as not, so it is not refused outright — but it does not leave unseen
-    # either (SEC review C2): each one waits for a person's acknowledgement.
-    pending = bundle_review.possible_keys(
-        ((f.path, f.text) for f in files), findings, acknowledged
-    )
-    if pending:
-        raise PossibleKeysError(pending)
+    # as not, so an export only warns. A publish is the step that can't be
+    # taken back, so there each one waits for a person (SEC review C2).
+    if stop_on_possible_keys:
+        pending = bundle_review.possible_keys(
+            ((f.path, f.text) for f in files), findings, acknowledged
+        )
+        if pending:
+            raise PossibleKeysError(pending)
     _stamp_bookkeeping(slug, agent_uid, version, digest)
     return bundle
 

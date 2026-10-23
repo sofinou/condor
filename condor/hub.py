@@ -1114,12 +1114,10 @@ def publish(
     docstring on why the sharing outbox's shape is wrong here.
 
     ``acknowledged`` is the fingerprints of possible keys a person confirmed
-    are not keys (SEC review C2). ``build`` stops on any other, and the ones
-    this bundle really carries ride along as ``acknowledged_secrets`` so the
-    hub, which runs the same check, does not refuse them a second time.
+    are not keys (SEC review C2); ``build`` stops on any other before anything
+    is sent.
     """
     from condor.agents import bundle as agent_bundle
-    from condor.agents import bundle_review
 
     if not (token or "").strip():
         raise NoTokenError(
@@ -1129,16 +1127,11 @@ def publish(
     # bookkeeping — ``build`` writes ``bundle_version``/``bundle_digest`` on
     # success and an export refused for a missing token should leave no trace.
     bundle = agent_bundle.build(
-        slug, notes=notes, author_name=author_name, acknowledged=acknowledged
-    )
-    carried = sorted(
-        {
-            key.fingerprint
-            for key in bundle_review.possible_keys(
-                ((f.path, f.text) for f in bundle.files),
-                bundle_review.review(bundle),
-            )
-        }
+        slug,
+        notes=notes,
+        author_name=author_name,
+        acknowledged=acknowledged,
+        stop_on_possible_keys=True,
     )
     text = agent_bundle.render(bundle)
     payload = text.encode("utf-8")
@@ -1152,8 +1145,6 @@ def publish(
             # The bundle verbatim, as text, so what the hub stores is what this
             # install would have handed over on a USB stick.
             "bundle": text,
-            # Fingerprints only — never a value (SEC review C2).
-            "acknowledged_secrets": carried,
         },
         separators=(",", ":"),
     ).encode("utf-8")

@@ -35,7 +35,6 @@ from fastapi import (
     File,
     Form,
     HTTPException,
-    Query,
     Response,
     UploadFile,
 )
@@ -3186,7 +3185,6 @@ async def export_agent_bundle(
     slug: str,
     notes: str = "",
     author_name: str = "",
-    acknowledge: list[str] = Query(default=[]),
     user: WebUser = Depends(get_current_user),
 ):
     """This agent as one portable file.
@@ -3212,13 +3210,7 @@ async def export_agent_bundle(
 
     _get_agent(slug)
     try:
-        bundle = agent_bundle.build(
-            slug, notes=notes, author_name=author_name, acknowledged=acknowledge
-        )
-    except agent_bundle.PossibleKeysError as exc:
-        # 409 with the list: values that may be keys, waiting for a person to
-        # confirm each by fingerprint (``?acknowledge=``) — SEC review C2.
-        return _possible_keys_response(exc)
+        bundle = agent_bundle.build(slug, notes=notes, author_name=author_name)
     except ValueError as exc:
         raise _bundle_refusal(exc) from exc
     tally: dict[str, int] = {}

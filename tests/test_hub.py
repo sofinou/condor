@@ -2679,11 +2679,11 @@ def test_fetch_is_addressed_only_by_what_the_caller_gave(traveller, fake_hub):
     assert not any("/admin" in call.url for call in fake_hub.calls)
 
 
-# ── Possible keys wait for a person, on every door (SEC review C2) ───────
+# ── Possible keys wait for a person before a publish (SEC review C2) ──────
 #
-# A bare 64-hex is an EVM key as often as a tx hash. Export and publish stop on
-# it until someone acknowledges it by fingerprint; the acknowledgement rides to
-# Botcamp, which runs the same check, as ``acknowledged_secrets``.
+# A bare 64-hex is an EVM key as often as a tx hash. A local export only warns;
+# a publish, which can't be taken back, stops until someone acknowledges each
+# one by fingerprint.
 
 _MAYBE_KEY = "4c0883a69102937d6231471b5dbb6204fe512961708279f1b7e0f4e6a6b01f4c"
 
@@ -2696,23 +2696,17 @@ def keyish(traveller):
     return bundle_review.fingerprint(_MAYBE_KEY)
 
 
-def test_chat_export_lists_possible_keys_and_takes_an_acknowledgement(keyish):
+def test_a_local_export_only_warns_on_a_possible_key(keyish):
     from mcp_servers.condor.tools import trading_agent
 
-    stopped = trading_agent.manage_agents(action="export", agent_slug="traveller")
+    done = trading_agent.manage_agents(action="export", agent_slug="traveller")
 
-    assert "may be a private key" in stopped["error"]
-    assert [k["fingerprint"] for k in stopped["possible_keys"]] == [keyish]
-    assert _MAYBE_KEY not in json.dumps(stopped)
-    assert "never acknowledge one yourself" in stopped["next"]
-
-    done = trading_agent.manage_agents(
-        action="export", agent_slug="traveller", acknowledge=[keyish]
-    )
     assert done["exported"] is True
+    assert any(f["label"] == "evm-hex64" for f in done["findings"])
+    assert _client().get("/agents/traveller/bundle").status_code == 200
 
 
-def test_chat_publish_stops_before_sending_then_carries_the_acknowledgement(
+def test_chat_publish_stops_before_sending_then_takes_the_acknowledgement(
     keyish, fake_hub, cm, monkeypatch
 ):
     from mcp_servers.condor.settings import settings
@@ -2722,44 +2716,16 @@ def test_chat_publish_stops_before_sending_then_carries_the_acknowledgement(
     hub.set_token("botcamp-tok")
 
     stopped = trading_agent.manage_agents(action="publish_hub", agent_slug="traveller")
-    assert stopped["possible_keys"][0]["fingerprint"] == keyish
+    assert "may be a private key" in stopped["error"]
+    assert [k["fingerprint"] for k in stopped["possible_keys"]] == [keyish]
+    assert _MAYBE_KEY not in json.dumps(stopped)
+    assert "never acknowledge one yourself" in stopped["next"]
     assert fake_hub.calls == []
 
     trading_agent.manage_agents(
         action="publish_hub", agent_slug="traveller", acknowledge=[keyish]
     )
-    body = fake_hub.calls[-1].body
-    assert body["acknowledged_secrets"] == [keyish]
-
-
-def test_publish_sends_only_acknowledgements_the_bundle_carries(keyish, fake_hub, cm):
-    hub.set_token("botcamp-tok")
-
-    hub.publish(
-        "traveller", "botcamp-tok", acknowledged=[keyish, "sha256:ffffffffffffffff"]
-    )
-
-    assert fake_hub.calls[-1].body["acknowledged_secrets"] == [keyish]
-
-
-def test_a_clean_publish_acknowledges_nothing(traveller, fake_hub, cm):
-    hub.publish("traveller", "botcamp-tok")
-
-    assert fake_hub.calls[-1].body["acknowledged_secrets"] == []
-
-
-def test_the_export_route_answers_409_with_the_list_then_takes_it(keyish):
-    client = _client()
-
-    stopped = client.get("/agents/traveller/bundle")
-    assert stopped.status_code == 409
-    assert "may be a private key" in stopped.json()["detail"]
-    assert stopped.json()["possible_keys"][0]["fingerprint"] == keyish
-    assert _MAYBE_KEY not in stopped.text
-
-    assert (
-        client.get(f"/agents/traveller/bundle?acknowledge={keyish}").status_code == 200
-    )
+    assert fake_hub.calls[-1].url.endswith("/agents")
 
 
 def test_the_publish_route_answers_409_with_the_list_then_takes_it(
@@ -2770,8 +2736,11 @@ def test_the_publish_route_answers_409_with_the_list_then_takes_it(
 
     stopped = client.post("/agents/traveller/publish", json={})
     assert stopped.status_code == 409
+    assert "may be a private key" in stopped.json()["detail"]
+    assert stopped.json()["possible_keys"][0]["fingerprint"] == keyish
+    assert _MAYBE_KEY not in stopped.text
     assert fake_hub.calls == []
 
     sent = client.post("/agents/traveller/publish", json={"acknowledge": [keyish]})
     assert sent.status_code == 200
-    assert fake_hub.calls[-1].body["acknowledged_secrets"] == [keyish]
+    assert "acknowledged_secrets" not in fake_hub.calls[-1].body

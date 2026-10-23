@@ -474,11 +474,11 @@ export function HubDeviceSignIn() {
 }
 
 /**
- * The values in an export that may be private keys, one checkbox each
- * (SEC review C2). A bare 64-hex is an EVM key as often as a tx hash, so the
- * export stops until the person says, for every one, that it is not a key —
- * by fingerprint, so the value never travels back to this page. A key is
- * removed from the agent, not ticked.
+ * The values a publish stopped on because they may be private keys, one
+ * checkbox each (SEC review C2). A bare 64-hex is an EVM key as often as a tx
+ * hash, so the publish waits until the person says, for every one, that it is
+ * not a key — by fingerprint, so the value never travels back to this page. A
+ * key is removed from the agent, not ticked.
  */
 function PossibleKeysCheck({
   keys,
@@ -540,7 +540,7 @@ function PossibleKeysCheck({
           disabled={busy || !allChecked}
           className="rounded border border-[var(--color-primary)]/40 bg-[var(--color-primary)]/10 px-2 py-0.5 font-semibold text-[var(--color-primary)] disabled:opacity-50"
         >
-          Continue
+          Publish
         </button>
         <button onClick={onCancel} disabled={busy} className="underline disabled:opacity-50">
           Cancel
@@ -561,14 +561,12 @@ function PossibleKeysCheck({
 export function ExportAgentButton({ slug }: { slug: string }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [possibleKeys, setPossibleKeys] = useState<PossibleKey[]>([]);
 
-  async function download(acknowledge: string[] = []) {
+  async function download() {
     setBusy(true);
     setError(null);
     try {
-      const text = await api.exportAgentBundle(slug, acknowledge);
-      setPossibleKeys([]);
+      const text = await api.exportAgentBundle(slug);
       const url = URL.createObjectURL(new Blob([text], { type: "application/json" }));
       const link = document.createElement("a");
       link.href = url;
@@ -576,9 +574,7 @@ export function ExportAgentButton({ slug }: { slug: string }) {
       link.click();
       URL.revokeObjectURL(url);
     } catch (e) {
-      const keys = possibleKeysOf(e);
-      if (keys.length) setPossibleKeys(keys);
-      else setError((e as Error).message);
+      setError((e as Error).message);
     } finally {
       setBusy(false);
     }
@@ -591,16 +587,8 @@ export function ExportAgentButton({ slug }: { slug: string }) {
           {error}
         </span>
       )}
-      {possibleKeys.length > 0 && (
-        <PossibleKeysCheck
-          keys={possibleKeys}
-          busy={busy}
-          onConfirm={(fingerprints) => download(fingerprints)}
-          onCancel={() => setPossibleKeys([])}
-        />
-      )}
       <button
-        onClick={() => download()}
+        onClick={download}
         disabled={busy}
         title={`Export ${slug} as one file`}
         className="flex shrink-0 items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs font-semibold text-[var(--color-text-muted)] transition-all hover:border-[var(--color-primary)]/50 hover:text-[var(--color-primary)] disabled:opacity-50"
@@ -644,10 +632,8 @@ export function PublishAgentButton({ slug }: { slug: string }) {
     null,
   );
   const [error, setError] = useState<string | null>(null);
-  // Possible keys the export stopped on, and the ones the person then
-  // confirmed are not keys — carried through to the publish (SEC review C2).
+  // Values the publish stopped on as possible keys (SEC review C2).
   const [possibleKeys, setPossibleKeys] = useState<PossibleKey[]>([]);
-  const [acknowledged, setAcknowledged] = useState<string[]>([]);
 
   const submission = useQuery({
     queryKey: ["hub-submission", slug],
@@ -659,13 +645,11 @@ export function PublishAgentButton({ slug }: { slug: string }) {
   const [busy, setBusy] = useState(false);
   const receipt = submission.data?.receipt ?? null;
 
-  async function look(acknowledge: string[] = []) {
+  async function look() {
     setBusy(true);
     setError(null);
     try {
-      const text = await api.exportAgentBundle(slug, acknowledge);
-      setPossibleKeys([]);
-      setAcknowledged(acknowledge);
+      const text = await api.exportAgentBundle(slug);
       const bundle = JSON.parse(text) as {
         version: number;
         files: { path: string }[];
@@ -676,23 +660,26 @@ export function PublishAgentButton({ slug }: { slug: string }) {
         version: bundle.version,
       });
     } catch (e) {
-      const keys = possibleKeysOf(e);
-      if (keys.length) setPossibleKeys(keys);
-      else setError((e as Error).message);
+      setError((e as Error).message);
     } finally {
       setBusy(false);
     }
   }
 
-  async function send() {
+  async function send(acknowledge: string[] = []) {
     setBusy(true);
     setError(null);
     try {
-      const result = await api.publishAgentToHub(slug, "", "", acknowledged);
+      const result = await api.publishAgentToHub(slug, "", "", acknowledge);
       setPreview(null);
+      setPossibleKeys([]);
       queryClient.setQueryData(["hub-submission", slug], { receipt: result.receipt });
     } catch (e) {
-      setError((e as Error).message);
+      const keys = possibleKeysOf(e);
+      if (keys.length) {
+        setPreview(null);
+        setPossibleKeys(keys);
+      } else setError((e as Error).message);
     } finally {
       setBusy(false);
     }
@@ -739,7 +726,7 @@ export function PublishAgentButton({ slug }: { slug: string }) {
         <PossibleKeysCheck
           keys={possibleKeys}
           busy={busy}
-          onConfirm={(fingerprints) => look(fingerprints)}
+          onConfirm={(fingerprints) => send(fingerprints)}
           onCancel={() => setPossibleKeys([])}
         />
       )}
@@ -751,13 +738,11 @@ export function PublishAgentButton({ slug }: { slug: string }) {
         >
           <span>
             Uploading version {preview.version} — {preview.files.length} file
-            {preview.files.length !== 1 ? "s" : ""}, {preview.bytes} bytes
-            {acknowledged.length > 0 &&
-              `, with ${acknowledged.length} value${acknowledged.length !== 1 ? "s" : ""} you confirmed are not keys`}
-            . This leaves your machine and cannot be recalled from anybody's download.
+            {preview.files.length !== 1 ? "s" : ""}, {preview.bytes} bytes. This
+            leaves your machine and cannot be recalled from anybody's download.
           </span>
           <button
-            onClick={send}
+            onClick={() => send()}
             disabled={busy}
             className="shrink-0 rounded border border-[var(--color-primary)]/40 bg-[var(--color-primary)]/10 px-2 py-0.5 font-semibold text-[var(--color-primary)] disabled:opacity-50"
           >
@@ -775,7 +760,7 @@ export function PublishAgentButton({ slug }: { slug: string }) {
         canPublish &&
         possibleKeys.length === 0 && (
           <button
-            onClick={() => look()}
+            onClick={look}
             disabled={busy}
             title={`Publish ${slug} to the agent hub`}
             className="flex shrink-0 items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs font-semibold text-[var(--color-text-muted)] transition-all hover:border-[var(--color-primary)]/50 hover:text-[var(--color-primary)] disabled:opacity-50"
