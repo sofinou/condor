@@ -275,8 +275,9 @@ def review_files(files: Iterable[tuple[str, str]]) -> list[Finding]:
 # A bundle is different. It is about to leave this box for good, and an
 # exchange key, an LLM key or a bot token in a routine or a sample config is
 # the one thing nobody downloading it should get. These shapes therefore live
-# here, where only the export/publish refusal reads them, and they match the
-# hub's own server-side check (Botcamp's ``src/lib/agent-secrets.ts``).
+# here, where only the export/publish refusal reads them. Botcamp runs a
+# similar check on upload (``src/lib/agent-secrets.ts``); the two are close,
+# not identical.
 
 #: The credential kinds :func:`_credentials` reports.
 API_KEY = "api-key"
@@ -299,9 +300,11 @@ _PROVIDER_KEY_RE = re.compile(
     + _ID_GUARD_AFTER
 )
 
-#: An RPC or API URL carrying its key: ``?api-key=…``, ``&token=…``.
+#: An RPC or API URL carrying its key: ``?api-key=…``, ``&access_token=…``.
+#: Not a bare ``token=``/``key=``: DEX and price APIs take a token's mint or
+#: address that way, and that is no secret.
 _KEY_IN_URL_RE = re.compile(
-    r"[?&](?:api[-_]?key|apikey|access[-_]?token|auth[-_]?token|token|key)="
+    r"[?&](?:api[-_]?key|apikey|access[-_]?token|auth[-_]?token)="
     r"([A-Za-z0-9_\-]{16,})",
     re.IGNORECASE,
 )
@@ -313,14 +316,16 @@ _SECRET_ASSIGNMENT_RE = re.compile(
     re.IGNORECASE,
 )
 
-_SECRET_VALUE_RE = re.compile(r"^[A-Za-z0-9+/=_\-]{12,}$")
+_SECRET_VALUE_RE = re.compile(r"^[A-Za-z0-9+/=_\-]{20,}$")
 
 
 def _looks_like_secret_value(value: str) -> bool:
     """A real value rather than a placeholder or code.
 
-    12+ key-like characters mixing letters and digits, so ``YOUR_API_KEY``,
-    ``${ENV}``, ``""``, ``config.password`` and ``os.getenv(...)`` all pass.
+    20+ key-like characters mixing letters and digits, so ``YOUR_API_KEY``,
+    ``${ENV}``, ``""``, ``config.password``, ``os.getenv(...)`` and an account
+    name like ``binance_main_2`` all pass. A short hand-written password
+    passes too — the cost of that 20, which is an open call (see the PR).
     """
     return (
         bool(_SECRET_VALUE_RE.match(value))
@@ -386,7 +391,7 @@ class PossibleKey(NamedTuple):
 
 
 def fingerprint(value: str) -> str:
-    """``sha256:<16 hex>`` of the value, normalized the way Botcamp does it.
+    """``sha256:<16 hex>`` of the value.
 
     A hex value loses its ``0x`` and its case, so the same key written either
     way is one fingerprint; base58 is case-sensitive and kept as-is.
@@ -419,7 +424,7 @@ def possible_keys(
 
 
 def possible_keys_refusal(pending: Sequence[PossibleKey]) -> str:
-    """The sentence an export stops with while possible keys are unacknowledged."""
+    """The sentence a publish stops with while possible keys are unacknowledged."""
     where = ", ".join(
         f"{p.path}:{p.line} ({p.label}, {p.fingerprint})" for p in pending
     )
@@ -427,7 +432,7 @@ def possible_keys_refusal(pending: Sequence[PossibleKey]) -> str:
         f"This agent's library carries {len(pending)} value(s) that may be a "
         f"private key: {where}. Check each one. If it is a key, remove it; if it "
         "is something else (a transaction hash, a digest), confirm it by its "
-        "fingerprint and export again."
+        "fingerprint and publish again."
     )
 
 

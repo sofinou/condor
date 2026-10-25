@@ -198,7 +198,11 @@ _EVM_KEY = "0x" + "4c0883a69102937d6231471b5dbb6204fe512961708279f2d3e1c0b6a5f7e
             f"wallet:\n  private_key: {_EVM_KEY}\n",
             br.CREDENTIAL,
         ),
-        ("sample_configs/c.yml", 'api_secret: "Zq81mK2pX7vN4cR9"\n', br.CREDENTIAL),
+        (
+            "sample_configs/c.yml",
+            'api_secret: "Zq81mK2pX7vN4cR9tL3wQ8"\n',
+            br.CREDENTIAL,
+        ),
     ],
 )
 def test_a_credential_in_a_file_is_a_certain_secret(path, text, label):
@@ -223,6 +227,10 @@ def test_a_credential_in_a_file_is_a_certain_secret(path, text, label):
         "private_key: <your-private-key>\n",
         "AWS documents AKIA" + "IOSFODNN7EXAMPLE as its example key.\n",
         "https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1m\n",
+        # A token's mint in a DEX or price API query is an address, not a key.
+        "url: https://api.dexscreener.com/tokens?token=So11111111111111111111111111111111111111112\n",
+        # An account name, not a key: values under 20 characters pass.
+        "api_key: binance_main_2\n",
     ],
 )
 def test_placeholders_and_code_are_not_credentials(text):

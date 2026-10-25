@@ -1277,6 +1277,24 @@ def test_the_config_file_and_its_backup_are_owner_only(cm):
     assert stat.S_IMODE(os.stat(cm._backup_path).st_mode) == 0o600
 
 
+def test_a_refused_chmod_still_saves_the_whole_config(cm, monkeypatch):
+    """A config.yml this process can write but not chmod (a bind mount owned
+    by another uid) must not be left truncated — only the tightening is
+    skipped, with a warning."""
+    import os
+
+    import config_manager as cm_module
+
+    def refuse(fd, mode):
+        raise PermissionError("not the owner")
+
+    monkeypatch.setattr(os, "fchmod", refuse)
+    hub.set_token("botcamp-tok")
+
+    reloaded = cm_module.ConfigManager(config_path=str(cm.config_path))
+    assert reloaded.get_hub()["token"] == "botcamp-tok"
+
+
 def test_clearing_the_token_is_persisted_too(cm):
     import config_manager as cm_module
 

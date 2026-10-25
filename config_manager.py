@@ -313,10 +313,16 @@ class ConfigManager:
 
             # Owner-only (SEC review C5): this file holds the hub token and
             # server credentials. ``os.open``'s mode applies only when it
-            # creates the file, so an existing 0644 file is tightened too.
-            fd = os.open(self.config_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-            os.chmod(self.config_path, 0o600)
+            # creates the file, so an existing 0644 file is tightened through
+            # the open descriptor — before truncating, and a refusal (a file
+            # this process doesn't own) only warns: the config must still save.
+            fd = os.open(self.config_path, os.O_WRONLY | os.O_CREAT, 0o600)
+            try:
+                os.fchmod(fd, 0o600)
+            except OSError as e:
+                logger.warning(f"Could not make {self.config_path} owner-only: {e}")
             with os.fdopen(fd, "w") as f:
+                f.truncate(0)
                 yaml.dump(
                     data,
                     f,

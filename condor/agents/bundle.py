@@ -174,10 +174,10 @@ class BundleError(ValueError):
 
 
 class PossibleKeysError(BundleError):
-    """An export stopped on values that may be private keys (SEC review C2).
+    """A publish stopped on values that may be private keys (SEC review C2).
 
     ``pending`` lists each by file, line, kind and fingerprint — never the
-    value — so a surface can ask a person about each one and export again
+    value — so a surface can ask a person about each one and publish again
     with the ones they confirmed are not keys.
     """
 

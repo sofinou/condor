@@ -15,10 +15,13 @@ either side fails here instead of in production.
 import inspect
 import typing
 
-from condor.runtime.danger import READ_ONLY_CONFIG_ACTIONS, is_mutating_tool_call
+from condor.runtime.danger import (
+    DANGEROUS_AGENT_ACTIONS,
+    READ_ONLY_CONFIG_ACTIONS,
+    is_mutating_tool_call,
+)
 from handlers.agents._shared import (
     CREATE_EXECUTOR_TOOLS,
-    DANGEROUS_AGENT_ACTIONS,
     DANGEROUS_AMM_ACTIONS,
     DANGEROUS_BOT_ACTIONS,
     DANGEROUS_CLMM_ACTIONS,
